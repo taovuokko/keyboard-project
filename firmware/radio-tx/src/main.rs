@@ -123,9 +123,9 @@ fn setup_radio(radio: &mut hal::pac::RADIO) {
     radio.txaddress.write(|w| unsafe { w.txaddress().bits(0) });
     radio.rxaddresses.write(|w| w.addr0().enabled());
 
-    // Packet configuration: no S0/S1, 8-bit length, little endian, whitening, max 32 bytes.
+    // Packet configuration: fixed length = PACKET_LEN, no S0/S1, little endian, whitening.
     radio.pcnf0.write(|w| unsafe {
-        w.lflen().bits(8);
+        w.lflen().bits(0); // no length field in buffer
         w.s0len().bit(false);
         w.s1len().bits(0);
         w.s1incl().clear_bit();
@@ -134,7 +134,7 @@ fn setup_radio(radio: &mut hal::pac::RADIO) {
     });
     radio.pcnf1.write(|w| unsafe {
         w.maxlen().bits(PACKET_LEN as u8);
-        w.statlen().bits(0);
+        w.statlen().bits(PACKET_LEN as u8); // fixed-length packets
         w.balen().bits(4); // base address length
         w.endian().little();
         w.whiteen().enabled()
