@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 9ae56478b42af56f9d797f1a08b36a7096b3ad8a079137eb01eb6fb4657b494c # shrinks to h = PacketHeader { session_id: 0, counter: 0, kind: KeepAlive, flags: PacketFlags { encrypted: false, needs_ack: false, retransmit: false } }, p = KeyReport { keys: [0] }
+cc 2fe5dcd22dd2378d055892e36b59d5c4385f24ea1d53e8a4be64b9ec96363b29 # shrinks to h = PacketHeader { session_id: 0, counter: 0, kind: Control, flags: PacketFlags { encrypted: false, needs_ack: false, retransmit: false } }, p = HandshakeAccept { session_id: 0 }

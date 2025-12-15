@@ -1,0 +1,15 @@
+[package]
+name = "keyboard-skeleton"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+
+[features]
+default = ["std"]
+std = []
+embassy = []
+
+[dependencies]
+proto = { workspace = true }

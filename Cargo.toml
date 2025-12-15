@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "proto",
+    "host-sim",
+    "firmware/keyboard-skeleton",
+    "firmware/feather-fw",
+    "firmware/radio-tx",
+    "firmware/radio-rx",
+    "firmware/led-test",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.82"
+authors = ["keyboard-project contributors"]
+
+[workspace.dependencies]
+# shared protocol types live here to keep host simulation and firmware aligned
+proto = { path = "proto" }
