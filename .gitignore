@@ -1,2 +1,18 @@
+# Rust
 /target
 **/*.rs.bk
+
+# STM32 / vendor SDKs
+firmware/drivers/
+firmware/STM32Cube*
+**/STM32Cube_FW_*
+**/*.zip
+
+.vscode/
+.idea/
+
+# Build artifacts
+*.o
+*.a
+*.elf
+*.map

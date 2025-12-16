@@ -5,10 +5,15 @@ use crate::{MAX_MAC_BYTES, NONCE_BYTES};
 use chacha20poly1305::aead::{AeadInPlace, KeyInit};
 #[cfg(feature = "crypto")]
 use chacha20poly1305::{Key, Tag, XChaCha20Poly1305, XNonce};
+use subtle::ConstantTimeEq;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CryptoError {
-    AuthFailed,
+    /// Authentication failed (MAC mismatch or decryption failure).
+    /// Context indicates where the failure occurred (e.g., "seal", "open", "nonce_validation").
+    AuthFailed {
+        context: &'static str,
+    },
     Parse(crate::ParseError),
     Serialize(crate::SerializationError),
 }
@@ -33,7 +38,57 @@ pub trait Aead {
 }
 
 /// Deterministic, non-cryptographic AEAD for simulations and tests.
+///
+/// # WARNING: NOT FOR PRODUCTION USE
+///
+/// This is a dummy implementation that provides NO cryptographic security.
+/// It uses a weak, non-cryptographic hash function and should ONLY be used for:
+/// - Testing and development
+/// - Simulations where crypto overhead is unwanted
+/// - Protocol validation without real encryption
+///
+/// **NEVER use DummyAead in production firmware or with real sensitive data.**
+/// Always use `RealAead` (XChaCha20-Poly1305) for production deployments.
+#[cfg_attr(
+    all(not(test), not(feature = "std")),
+    deprecated(
+        note = "DummyAead should not be used in no_std (firmware) builds. Use RealAead instead."
+    )
+)]
 pub struct DummyAead;
+
+impl Default for DummyAead {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DummyAead {
+    /// Create a new DummyAead instance.
+    ///
+    /// # Warning
+    /// This provides NO cryptographic security. Only use for testing/simulation.
+    #[cfg(feature = "std")]
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Create a new DummyAead instance (no_std version).
+    ///
+    /// # Panics
+    /// Panics in release builds when used in no_std (firmware) context to prevent
+    /// accidental use in production.
+    #[cfg(not(feature = "std"))]
+    pub fn new() -> Self {
+        #[cfg(not(test))]
+        {
+            if cfg!(not(debug_assertions)) {
+                panic!("DummyAead must not be used in production firmware builds!");
+            }
+        }
+        Self
+    }
+}
 
 impl Aead for DummyAead {
     fn seal(
@@ -55,10 +110,13 @@ impl Aead for DummyAead {
         mac: &[u8],
     ) -> Result<Vec<u8>, CryptoError> {
         let expected = simple_tag(aad, ciphertext, nonce, mac.len());
-        if expected == mac {
+        // Use constant-time comparison to prevent timing attacks
+        if expected.ct_eq(mac).into() {
             Ok(ciphertext.to_vec())
         } else {
-            Err(CryptoError::AuthFailed)
+            Err(CryptoError::AuthFailed {
+                context: "DummyAead::open",
+            })
         }
     }
 }
@@ -100,7 +158,9 @@ impl Aead for RealAead {
         let tag = self
             .cipher
             .encrypt_in_place_detached(XNonce::from_slice(nonce), aad, &mut buf)
-            .map_err(|_| CryptoError::AuthFailed)?;
+            .map_err(|_| CryptoError::AuthFailed {
+                context: "RealAead::seal",
+            })?;
         let mut mac = tag.to_vec();
         if mac.len() != mac_len {
             mac.truncate(mac_len.min(mac.len()));
@@ -131,7 +191,9 @@ impl Aead for RealAead {
                 &mut buf,
                 Tag::from_slice(mac),
             )
-            .map_err(|_| CryptoError::AuthFailed)?;
+            .map_err(|_| CryptoError::AuthFailed {
+                context: "RealAead::open",
+            })?;
         Ok(buf)
     }
 }

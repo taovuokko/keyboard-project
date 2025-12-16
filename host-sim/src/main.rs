@@ -1,11 +1,10 @@
 use clap::Parser;
-use serde::Serialize;
 use proto::{
     associated_data, demo_config, derive_nonce, encode_header, encode_payload, sample_packets,
     seal_framed, sim::MockRf, simulate_wake_sequence, validate_packet, DummyAead, RealAead,
-    SessionKeys, SimEvent, ValidationError, KEY_BYTES, MAX_RETRANSMIT_ATTEMPTS,
-    SESSION_SALT_BYTES,
+    SessionKeys, SimEvent, ValidationError, KEY_BYTES, MAX_RETRANSMIT_ATTEMPTS, SESSION_SALT_BYTES,
 };
+use serde::Serialize;
 
 fn main() {
     let args = Args::parse();
@@ -113,7 +112,11 @@ fn main() {
         let sealed_hex: String = sealed.iter().map(|b| format!("{:02x}", b)).collect();
         println!(
             "  {} frame: {}",
-            if use_real_aead { "xchacha20-poly1305" } else { "dummy-aead" },
+            if use_real_aead {
+                "xchacha20-poly1305"
+            } else {
+                "dummy-aead"
+            },
             sealed_hex
         );
 
@@ -175,7 +178,7 @@ fn main() {
     } else if let Some(next) = last_counter.map(|c| c + 1) {
         warm_session.resume_from(next);
     }
-    let warm_counter = warm_session.next_counter();
+    let warm_counter = warm_session.next_counter().expect("counter not exhausted");
     let nonce = warm_session.nonce_for(warm_counter);
     println!(
         "- next seq={} uses deterministic nonce (salt || counter) prefix={:02x?}",
@@ -202,7 +205,9 @@ fn main() {
         );
         if let Some(path) = args.metrics_csv.as_ref() {
             let mut content = String::new();
-            content.push_str("delivered,dropped,latency_ms,jitter_ms,drop_first,reorder,mock_rf,real_aead\n");
+            content.push_str(
+                "delivered,dropped,latency_ms,jitter_ms,drop_first,reorder,mock_rf,real_aead\n",
+            );
             content.push_str(&format!(
                 "{},{},{},{},{},{},{},{}\n",
                 stats.delivered,

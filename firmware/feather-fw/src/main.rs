@@ -2,13 +2,13 @@
 #![no_std]
 
 use cortex_m_rt::entry;
-use nrf52840_hal as hal;
-use panic_halt as _;
 use embedded_hal::blocking::delay::DelayMs;
 use embedded_hal::digital::v2::OutputPin;
-use usbd_serial::SerialPort;
+use nrf52840_hal as hal;
+use panic_halt as _;
 use usb_device::bus::UsbBusAllocator;
 use usb_device::device::{UsbDevice, UsbDeviceBuilder, UsbVidPid};
+use usbd_serial::SerialPort;
 
 type UsbBusType = hal::usbd::Usbd<hal::usbd::UsbPeripheral<'static>>;
 

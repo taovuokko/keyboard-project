@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 
 fn parse_hex_u32(val: &str) -> Option<u32> {
     let trimmed = val.trim();
-    if let Some(stripped) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+    if let Some(stripped) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
         u32::from_str_radix(stripped, 16).ok()
     } else {
         trimmed.parse::<u32>().ok()
@@ -41,8 +44,16 @@ fn candidate_info_paths() -> Vec<PathBuf> {
     // Common auto-mount roots on Linux; harmless if absent.
     if let Ok(user) = env::var("USER") {
         for root in ["/media", "/run/media"] {
-            paths.push(PathBuf::from(root).join(&user).join("FTHR840BOOT/INFO_UF2.TXT"));
-            paths.push(PathBuf::from(root).join(&user).join("FTHR840BOOT/INFO_UF2.TXT".to_lowercase()));
+            paths.push(
+                PathBuf::from(root)
+                    .join(&user)
+                    .join("FTHR840BOOT/INFO_UF2.TXT"),
+            );
+            paths.push(
+                PathBuf::from(root)
+                    .join(&user)
+                    .join("FTHR840BOOT/INFO_UF2.TXT".to_lowercase()),
+            );
         }
     }
 
@@ -66,8 +77,13 @@ fn main() {
         .find_map(|p| read_info_file(p).map(|vals| (vals, p.clone())));
 
     let ((app_start, flash_size), source) = match (env_app, env_flash, from_info) {
-        (Some(app), Some(flash), _) => ((app, flash), "environment (APP_BASE/FLASH_SIZE)".to_string()),
-        (None, None, Some(((app, flash), path))) => ((app, flash), format!("INFO_UF2.TXT at {}", path.display())),
+        (Some(app), Some(flash), _) => (
+            (app, flash),
+            "environment (APP_BASE/FLASH_SIZE)".to_string(),
+        ),
+        (None, None, Some(((app, flash), path))) => {
+            ((app, flash), format!("INFO_UF2.TXT at {}", path.display()))
+        }
         _ => {
             eprintln!(
                 "Set APP_BASE and FLASH_SIZE from INFO_UF2.TXT (or UF2_INFO_PATH) before building.\n\

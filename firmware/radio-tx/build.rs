@@ -4,7 +4,10 @@ use std::path::PathBuf;
 
 fn parse_hex_u32(val: &str) -> Option<u32> {
     let trimmed = val.trim();
-    if let Some(stripped) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+    if let Some(stripped) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
         u32::from_str_radix(stripped, 16).ok()
     } else {
         trimmed.parse::<u32>().ok()

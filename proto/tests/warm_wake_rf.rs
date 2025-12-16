@@ -13,7 +13,7 @@ fn warm_wake_survives_drop_and_reorder() {
     let mut rf = MockRf::new(true, true, 1); // drop first, reorder, jitter 1ms
 
     // Warm-wake data packet (no handshake).
-    let counter = session.next_counter(); // starts at 10
+    let counter = session.next_counter().expect("counter not exhausted"); // starts at 10
     let key_report = Packet {
         header: PacketHeader {
             session_id,
@@ -68,7 +68,8 @@ fn warm_wake_survives_drop_and_reorder() {
             } else {
                 let ack_nonce = session.nonce_for(counter + 1);
                 if let Ok(parsed_ack) = open_framed(&rx, &cfg, &aead, &ack_nonce) {
-                    if matches!(parsed_ack.payload, Payload::Ack { ack_counter } if ack_counter == counter) {
+                    if matches!(parsed_ack.payload, Payload::Ack { ack_counter } if ack_counter == counter)
+                    {
                         acked = true;
                         break;
                     }
@@ -92,5 +93,8 @@ fn warm_wake_survives_drop_and_reorder() {
         }
     }
 
-    assert!(acked, "warm wake packet should be acked even with drop/reorder");
+    assert!(
+        acked,
+        "warm wake packet should be acked even with drop/reorder"
+    );
 }

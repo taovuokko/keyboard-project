@@ -6,21 +6,21 @@
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 extern crate alloc;
 
-#[cfg(feature = "std")]
-use std::time::Duration;
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use core::time::Duration;
+#[cfg(feature = "std")]
+use std::time::Duration;
 
 mod aead;
 pub mod backend;
 pub mod sim;
-pub use aead::{Aead, CryptoError, DummyAead};
-#[cfg(feature = "crypto")]
-pub use aead::RealAead;
 #[cfg(not(feature = "crypto"))]
 pub use aead::DummyAead as DefaultAead;
 #[cfg(feature = "crypto")]
+pub use aead::RealAead;
+#[cfg(feature = "crypto")]
 pub use aead::RealAead as DefaultAead;
+pub use aead::{Aead, CryptoError, DummyAead};
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 use alloc::vec;
@@ -34,6 +34,8 @@ pub const SESSION_SALT_BYTES: usize = 16;
 pub const MAX_RETRANSMIT_ATTEMPTS: u8 = 1; // single retry, no backoff, to bound latency
 pub const HEADER_LEN: usize = 10; // session_id (4) + counter (4) + kind (1) + flags (1)
 pub const AAD_LEN: usize = HEADER_LEN + 2; // header + payload length (u16 LE)
+/// Counter limit before session must be rekeyed to prevent nonce reuse (2^31, half of u32::MAX).
+pub const COUNTER_REKEY_THRESHOLD: u32 = 1 << 31;
 
 #[cfg(all(not(feature = "std"), feature = "alloc"))]
 pub(crate) type Vec<T> = StdVec<T>;
@@ -107,11 +109,23 @@ pub struct PacketHeader {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Payload {
-    HandshakeInit { eph_pubkey: [u8; KEY_BYTES], nonce: [u8; NONCE_BYTES] },
-    HandshakeAccept { session_id: u32 },
-    Control { code: u8, data: Vec<u8> },
-    KeyReport { keys: Vec<u8> },
-    Ack { ack_counter: u32 },
+    HandshakeInit {
+        eph_pubkey: [u8; KEY_BYTES],
+        nonce: [u8; NONCE_BYTES],
+    },
+    HandshakeAccept {
+        session_id: u32,
+    },
+    Control {
+        code: u8,
+        data: Vec<u8>,
+    },
+    KeyReport {
+        keys: Vec<u8>,
+    },
+    Ack {
+        ack_counter: u32,
+    },
     KeepAlive,
 }
 
@@ -130,6 +144,11 @@ pub enum ValidationError {
     PayloadTooLarge,
     CounterJump,
     SessionMismatch,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum SessionError {
+    CounterExhausted,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -265,11 +284,13 @@ pub struct SerializedPacket {
 }
 
 /// Header || payload_len (u16 LE) || payload || mac
-pub fn serialize_framed(packet: &Packet, cfg: &ProtocolConfig) -> Result<Vec<u8>, SerializationError> {
+pub fn serialize_framed(
+    packet: &Packet,
+    cfg: &ProtocolConfig,
+) -> Result<Vec<u8>, SerializationError> {
     let serialized = serialize_packet(packet, cfg)?;
-    let mut out = Vec::with_capacity(
-        HEADER_LEN + 2 + serialized.payload.len() + serialized.mac.len(),
-    );
+    let mut out =
+        Vec::with_capacity(HEADER_LEN + 2 + serialized.payload.len() + serialized.mac.len());
     out.extend_from_slice(&serialized.header);
     out.extend_from_slice(&(serialized.payload.len() as u16).to_le_bytes());
     out.extend_from_slice(&serialized.payload);
@@ -407,11 +428,14 @@ pub fn seal_framed(
     nonce: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
     let serialized = serialize_packet(packet, cfg).map_err(CryptoError::Serialize)?;
-    let (ciphertext, mac) =
-        aead.seal(nonce, &serialized.aad, &serialized.payload, cfg.security.mac_len)?;
+    let (ciphertext, mac) = aead.seal(
+        nonce,
+        &serialized.aad,
+        &serialized.payload,
+        cfg.security.mac_len,
+    )?;
 
-    let mut out =
-        Vec::with_capacity(HEADER_LEN + 2 + ciphertext.len() + cfg.security.mac_len);
+    let mut out = Vec::with_capacity(HEADER_LEN + 2 + ciphertext.len() + cfg.security.mac_len);
     out.extend_from_slice(&serialized.header);
     out.extend_from_slice(&(ciphertext.len() as u16).to_le_bytes());
     out.extend_from_slice(&ciphertext);
@@ -490,10 +514,15 @@ impl SessionKeys {
     }
 
     /// Retrieve and increment the counter for the next packet in this session.
-    pub fn next_counter(&mut self) -> u32 {
+    /// Returns an error if the counter has reached the rekey threshold to prevent nonce reuse.
+    /// When this occurs, the session must be rekeyed (establish new session with fresh salt).
+    pub fn next_counter(&mut self) -> Result<u32, SessionError> {
+        if self.counter >= COUNTER_REKEY_THRESHOLD {
+            return Err(SessionError::CounterExhausted);
+        }
         let current = self.counter;
-        self.counter = self.counter.saturating_add(1);
-        current
+        self.counter = current + 1;
+        Ok(current)
     }
 
     /// Reset counters when a session is rekeyed/restarted.
@@ -609,7 +638,9 @@ pub fn sample_packets(cfg: &ProtocolConfig) -> Vec<Packet> {
         mac: vec![0x11; cfg.security.mac_len],
     };
 
-    let counter = session.next_counter();
+    let counter = session
+        .next_counter()
+        .expect("counter not exhausted in sample");
     let key_report = Packet {
         header: PacketHeader {
             session_id,
@@ -625,7 +656,9 @@ pub fn sample_packets(cfg: &ProtocolConfig) -> Vec<Packet> {
         mac: vec![0x22; cfg.security.mac_len],
     };
 
-    let counter = session.next_counter();
+    let counter = session
+        .next_counter()
+        .expect("counter not exhausted in sample");
     let ack = Packet {
         header: PacketHeader {
             session_id,
@@ -637,7 +670,9 @@ pub fn sample_packets(cfg: &ProtocolConfig) -> Vec<Packet> {
                 retransmit: false,
             },
         },
-        payload: Payload::Ack { ack_counter: key_report.header.counter },
+        payload: Payload::Ack {
+            ack_counter: key_report.header.counter,
+        },
         mac: vec![0x33; cfg.security.mac_len],
     };
 
@@ -645,9 +680,7 @@ pub fn sample_packets(cfg: &ProtocolConfig) -> Vec<Packet> {
 }
 
 fn flags_to_byte(flags: &PacketFlags) -> u8 {
-    (flags.encrypted as u8)
-        | ((flags.needs_ack as u8) << 1)
-        | ((flags.retransmit as u8) << 2)
+    (flags.encrypted as u8) | ((flags.needs_ack as u8) << 1) | ((flags.retransmit as u8) << 2)
 }
 
 fn flags_from_byte(b: u8) -> PacketFlags {
@@ -758,7 +791,7 @@ mod tests {
 
         assert!(matches!(
             open_framed(&tampered, &cfg, &dummy, &nonce),
-            Err(CryptoError::AuthFailed)
+            Err(CryptoError::AuthFailed { .. })
         ));
     }
 
@@ -780,7 +813,7 @@ mod tests {
         bad[HEADER_LEN + 2] ^= 0xFF;
         assert!(matches!(
             open_framed(&bad, &cfg, &aead, &nonce),
-            Err(CryptoError::AuthFailed)
+            Err(CryptoError::AuthFailed { .. })
         ));
     }
 
@@ -799,7 +832,29 @@ mod tests {
 
         assert!(matches!(
             open_framed(&tampered, &cfg, &aead, &nonce),
-            Err(CryptoError::AuthFailed)
+            Err(CryptoError::AuthFailed { .. })
         ));
+    }
+
+    #[test]
+    fn counter_exhaustion_prevents_nonce_reuse() {
+        let mut session = SessionKeys::new(0x12345678, [0xAB; SESSION_SALT_BYTES]);
+
+        // Set counter near the threshold
+        session.resume_from(COUNTER_REKEY_THRESHOLD - 1);
+
+        // Should succeed at threshold - 1
+        assert!(session.next_counter().is_ok());
+
+        // Should fail at threshold
+        let result = session.next_counter();
+        assert_eq!(result, Err(SessionError::CounterExhausted));
+
+        // Should continue to fail
+        assert_eq!(session.next_counter(), Err(SessionError::CounterExhausted));
+
+        // After reset, should work again
+        session.reset_counter();
+        assert!(session.next_counter().is_ok());
     }
 }

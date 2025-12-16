@@ -11,7 +11,7 @@ fn warm_wake_uses_cached_session() {
 
     // Simulate persisted counter after previous session (no handshake on warm wake).
     session.resume_from(5);
-    let counter = session.next_counter(); // should be 5
+    let counter = session.next_counter().expect("counter not exhausted"); // should be 5
     assert_eq!(counter, 5);
 
     let key_report = Packet {
@@ -30,13 +30,8 @@ fn warm_wake_uses_cached_session() {
     };
 
     // Last seen counter was 4 in the cached session; ensure validation accepts cached session.
-    validate_packet(
-        &key_report,
-        &cfg,
-        Some(session_id),
-        Some(counter - 1),
-    )
-    .expect("warm wake validate");
+    validate_packet(&key_report, &cfg, Some(session_id), Some(counter - 1))
+        .expect("warm wake validate");
 
     let nonce = session.nonce_for(counter);
     let aead = DummyAead;

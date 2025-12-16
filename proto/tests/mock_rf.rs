@@ -13,7 +13,7 @@ fn mock_rf_with_drop_and_reorder_delivers_ack_after_retransmit() {
     let mut rf = MockRf::new(true, true, 2); // drop first send, reorder, 2ms jitter
 
     // Simulate a single key report with retransmit allowance.
-    let counter = session.next_counter();
+    let counter = session.next_counter().expect("counter not exhausted");
     let payload = Payload::KeyReport { keys: vec![0x04] };
     let pkt = Packet {
         header: PacketHeader {
@@ -60,7 +60,9 @@ fn mock_rf_with_drop_and_reorder_delivers_ack_after_retransmit() {
                             retransmit: false,
                         },
                     },
-                    payload: Payload::Ack { ack_counter: parsed.header.counter },
+                    payload: Payload::Ack {
+                        ack_counter: parsed.header.counter,
+                    },
                     mac: vec![0xBB; cfg.security.mac_len],
                 };
                 let ack_nonce = session.nonce_for(ack.header.counter);
@@ -91,7 +93,8 @@ fn mock_rf_with_drop_and_reorder_delivers_ack_after_retransmit() {
                 // Try parse as ack (using next nonce).
                 let ack_nonce = derive_nonce(&session.salt, counter + 1);
                 if let Ok(parsed_ack) = open_framed(&rx_frame, &cfg, &aead, &ack_nonce) {
-                    if matches!(parsed_ack.payload, Payload::Ack { ack_counter } if ack_counter == counter) {
+                    if matches!(parsed_ack.payload, Payload::Ack { ack_counter } if ack_counter == counter)
+                    {
                         acked = true;
                         break;
                     }
@@ -126,7 +129,7 @@ fn mock_rf_drop_ack_stops_after_retry() {
     let mut rf = MockRf::new(false, false, 0);
 
     // Data packet.
-    let counter = session.next_counter();
+    let counter = session.next_counter().expect("counter not exhausted");
     let pkt = Packet {
         header: PacketHeader {
             session_id,
@@ -176,8 +179,7 @@ fn mock_rf_drop_ack_stops_after_retry() {
                         mac: vec![0xBB; cfg.security.mac_len],
                     };
                     let ack_nonce = session.nonce_for(ack.header.counter);
-                    let ack_frame =
-                        seal_framed(&ack, &cfg, &aead, &ack_nonce).expect("ack seal");
+                    let ack_frame = seal_framed(&ack, &cfg, &aead, &ack_nonce).expect("ack seal");
                     rf.push(ack_frame);
                 }
             } else {

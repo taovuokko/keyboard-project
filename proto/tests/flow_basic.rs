@@ -74,7 +74,7 @@ fn cold_handshake_then_keyreport_flow() {
         .expect("handshake accept validate");
 
     // Data packet (counter > handshake)
-    let counter = session.next_counter();
+    let counter = session.next_counter().expect("counter not exhausted");
     let key_report = Packet {
         header: PacketHeader {
             session_id,

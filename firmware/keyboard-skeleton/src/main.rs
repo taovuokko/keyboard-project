@@ -32,7 +32,7 @@ pub fn keyboard_task() {
 
     // Assume persisted counter from previous uptime.
     session.resume_from(7);
-    let counter = session.next_counter();
+    let counter = session.next_counter().expect("counter not exhausted");
 
     let key_report = Packet {
         header: PacketHeader {

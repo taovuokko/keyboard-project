@@ -15,11 +15,5 @@ embedded-hal = "0.2"
 usbd-serial = "0.1"
 usb-device = "0.2"
 
-[profile.release]
-codegen-units = 1
-lto = true
-panic = "abort"
-opt-level = "s"
-
 [package.metadata.docs.rs]
 targets = ["thumbv7em-none-eabihf"]

@@ -41,7 +41,10 @@ fn arb_payload() -> impl Strategy<Value = Payload> {
         Just(Payload::HandshakeAccept { session_id: 0 }),
         Just(Payload::KeepAlive),
         prop::collection::vec(any::<u8>(), 0..32).prop_map(|keys| Payload::KeyReport { keys }),
-        prop::collection::vec(any::<u8>(), 1..16).prop_map(|data| Payload::Control { code: data[0], data: data.into_iter().skip(1).collect() }),
+        prop::collection::vec(any::<u8>(), 1..16).prop_map(|data| Payload::Control {
+            code: data[0],
+            data: data.into_iter().skip(1).collect()
+        }),
         Just(Payload::Ack { ack_counter: 1 }),
         Just(Payload::HandshakeInit {
             eph_pubkey: [0u8; KEY_BYTES],

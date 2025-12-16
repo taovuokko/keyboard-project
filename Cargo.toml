@@ -2,6 +2,7 @@
 members = [
     "proto",
     "host-sim",
+    "firmware/debugger",
     "firmware/keyboard-skeleton",
     "firmware/feather-fw",
     "firmware/radio-tx",
@@ -19,3 +20,10 @@ authors = ["keyboard-project contributors"]
 [workspace.dependencies]
 # shared protocol types live here to keep host simulation and firmware aligned
 proto = { path = "proto" }
+
+# Release profile for firmware builds: optimize for size and reduce binary bloat
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"
+opt-level = "s"

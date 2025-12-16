@@ -5,6 +5,7 @@
 ## Layout
 - `proto/` shared protocol types (wake timing, security, latency budgets).
 - `host-sim/` host-side simulation binary for wake/auth/key delivery timelines.
+- `firmware/debugger/` STM32F746G-DISCO hardware debugger to watch radio paths without USB.
 - `firmware/keyboard/` placeholder for low-power keyboard firmware.
 - `firmware/dongle/` placeholder for USB dongle firmware.
 - `docs/` design notes and protocol RFCs.

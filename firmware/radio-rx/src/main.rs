@@ -6,9 +6,9 @@ use embedded_hal::blocking::delay::DelayMs;
 use embedded_hal::digital::v2::OutputPin;
 use nrf52840_hal as hal;
 use panic_halt as _;
-use usbd_serial::SerialPort;
 use usb_device::bus::UsbBusAllocator;
 use usb_device::device::{UsbDevice, UsbDeviceBuilder, UsbVidPid};
+use usbd_serial::SerialPort;
 
 const CHANNEL: u8 = 7; // 2407 MHz
 const ADDRESS_PREFIX: u8 = 0xE7;
@@ -16,6 +16,10 @@ const ADDRESS_BASE: u32 = 0xE7E7E7E7;
 const PACKET_LEN: usize = 8;
 
 type UsbBusType = hal::usbd::Usbd<hal::usbd::UsbPeripheral<'static>>;
+
+// SAFETY: These statics are only written to during initialization (before interrupts are enabled)
+// and then only read. The 'static references are valid for the program's lifetime since they
+// reference hardware peripherals.
 static mut CLOCKS: Option<
     hal::clocks::Clocks<
         hal::clocks::ExternalOscillator,
@@ -39,6 +43,8 @@ fn main() -> ! {
     let clocks = hal::clocks::Clocks::new(p.CLOCK)
         .enable_ext_hfosc()
         .start_lfclk();
+    // SAFETY: This is the only write to CLOCKS, happens before any interrupts are enabled,
+    // and the reference is valid for 'static as it references the hardware CLOCK peripheral.
     let clocks: &'static _ = unsafe {
         CLOCKS = Some(clocks);
         CLOCKS.as_ref().unwrap()
@@ -57,7 +63,6 @@ fn main() -> ! {
     let mut usb_dev: Option<UsbDevice<'static, UsbBusType>> = None;
     let mut usb_serial: Option<SerialPort<'static, UsbBusType>> = None;
     let mut usbd_periph = Some(p.USBD);
-    static mut USB_BUS: Option<UsbBusAllocator<UsbBusType>> = None;
 
     loop {
         if let Some(rx_ok) = rx_packet(&mut radio, &mut buf) {
@@ -107,10 +112,16 @@ fn usb_init(
         hal::clocks::Internal,
         hal::clocks::LfOscStarted,
     >,
-) -> Option<(UsbDevice<'static, UsbBusType>, SerialPort<'static, UsbBusType>)> {
+) -> Option<(
+    UsbDevice<'static, UsbBusType>,
+    SerialPort<'static, UsbBusType>,
+)> {
     let periph = hal::usbd::UsbPeripheral::new(usbd, clocks);
     let usbd = hal::usbd::Usbd::new(periph);
 
+    // SAFETY: This is the only write to USB_BUS, happens within an interrupt-free critical section,
+    // and is only called once during initialization. The references are valid for 'static as they
+    // reference the USB peripheral which exists for the program's lifetime.
     let (dev, serial) = cortex_m::interrupt::free(|_| unsafe {
         USB_BUS = Some(UsbBusAllocator::new(usbd));
         let bus = USB_BUS.as_ref().unwrap();
@@ -152,14 +163,19 @@ fn setup_radio(radio: &mut hal::pac::RADIO) {
 
     // 2 Mbps mode, whitening on.
     radio.mode.write(|w| w.mode().nrf_2mbit());
+    radio.txpower.write(|w| {
+        w.txpower()
+            .variant(hal::pac::radio::txpower::TXPOWER_A::_0D_BM)
+    });
     radio
-        .txpower
-        .write(|w| w.txpower().variant(hal::pac::radio::txpower::TXPOWER_A::_0D_BM));
-    radio.frequency.write(|w| unsafe { w.frequency().bits(CHANNEL) });
+        .frequency
+        .write(|w| unsafe { w.frequency().bits(CHANNEL) });
 
     // Address config
     radio.base0.write(|w| unsafe { w.bits(ADDRESS_BASE) });
-    radio.prefix0.write(|w| unsafe { w.ap0().bits(ADDRESS_PREFIX) });
+    radio
+        .prefix0
+        .write(|w| unsafe { w.ap0().bits(ADDRESS_PREFIX) });
     radio.txaddress.write(|w| unsafe { w.txaddress().bits(0) });
     radio.rxaddresses.write(|w| w.addr0().enabled());
 
@@ -192,7 +208,9 @@ fn rx_packet(radio: &mut hal::pac::RADIO, buf: &mut [u8; PACKET_LEN]) -> Option<
     radio.events_ready.reset();
     radio.events_crcok.reset();
 
-    radio.packetptr.write(|w| unsafe { w.packetptr().bits(buf.as_mut_ptr() as u32) });
+    radio
+        .packetptr
+        .write(|w| unsafe { w.packetptr().bits(buf.as_mut_ptr() as u32) });
 
     radio.tasks_rxen.write(|w| unsafe { w.bits(1) });
     while radio.events_ready.read().bits() == 0 {}
